@@ -5,7 +5,7 @@ import os
 import asyncio
 import yt_dlp
 
-TOKEN = "COLLE_TON_TOKEN_ICI"
+TOKEN = "MTQ5NzkyMjE5ODc3MjUxNDkxOA.Gb91-0._5BowLqzjAavpcXf62ZshlMVdWtF87q7MseEQ8"
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
