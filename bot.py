@@ -5,7 +5,8 @@ import os
 import asyncio
 import yt_dlp
 
-TOKEN = os.getenv("TOKEN")
+TOKEN = TOKEN_ICI
+
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -294,41 +295,107 @@ async def reprendre(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Aucune musique en pause.", ephemeral=True)
 
 # ─── TICKETS ──────────────────────────────────────────────
-class TicketButton(discord.ui.View):
+# ─── TICKETS ──────────────────────────────────────────────
+
+class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="📋 Ouvrir une candidature", style=discord.ButtonStyle.primary, custom_id="open_ticket")
-    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild = interaction.guild
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-        }
-        channel = await guild.create_text_channel(
-            name=f"candidature-{interaction.user.name}",
-            overwrites=overwrites
-        )
-        await channel.send(
-            f"👋 Bienvenue {interaction.user.mention} !\n\n"
-            "Merci d'ouvrir une candidature. Merci de répondre aux questions suivantes :\n\n"
-            "**1.** Quel est le nom de ton personnage ?\n"
-            "**2.** Quel est ton âge réel ?\n"
-            "**3.** Depuis combien de temps joues-tu au GTA RP ?\n"
-            "**4.** Pourquoi veux-tu rejoindre ce service ?\n"
-            "**5.** Décris une mise en situation RP\n\n"
-            "Un recruteur va bientôt te rejoindre. 🎖️"
-        )
-        await interaction.response.send_message(f"✅ Ton ticket a été créé : {channel.mention}", ephemeral=True)
+    @discord.ui.button(label="💼 Projets & Entreprises", style=discord.ButtonStyle.primary, custom_id="ticket_projet", row=0)
+    async def ticket_projet(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await creer_ticket(interaction, "projets-entreprises", "💼 Projets & Entreprises", "Décris ton projet ou ton entreprise RP.")
 
-@bot.tree.command(name="ticket", description="Envoyer le panel de candidature")
+    @discord.ui.button(label="🔧 Problème Technique", style=discord.ButtonStyle.secondary, custom_id="ticket_technique", row=0)
+    async def ticket_technique(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await creer_ticket(interaction, "probleme-technique", "🔧 Problème Technique", "Décris ton problème technique en détail.")
+
+    @discord.ui.button(label="⚖️ Plainte Joueur", style=discord.ButtonStyle.danger, custom_id="ticket_plainte", row=1)
+    async def ticket_plainte(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await creer_ticket(interaction, "plainte-joueur", "⚖️ Plainte Joueur", "Indique le pseudo du joueur et décris les faits.")
+
+    @discord.ui.button(label="❓ Question", style=discord.ButtonStyle.success, custom_id="ticket_question", row=1)
+    async def ticket_question(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await creer_ticket(interaction, "question", "❓ Question", "Pose ta question, le staff te répondra dès que possible.")
+
+async def creer_ticket(interaction: discord.Interaction, nom: str, titre: str, instructions: str):
+    guild = interaction.guild
+    
+    # Vérifie si le joueur a déjà un ticket ouvert
+    existing = discord.utils.get(guild.text_channels, name=f"ticket-{interaction.user.name.lower()}")
+    if existing:
+        await interaction.response.send_message(f"❌ Tu as déjà un ticket ouvert : {existing.mention}", ephemeral=True)
+        return
+
+    # Crée le salon privé
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+    }
+    
+    # Donne accès au staff si le rôle existe
+    staff_role = discord.utils.get(guild.roles, name="Staff")
+    if staff_role:
+        overwrites[staff_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+
+    channel = await guild.create_text_channel(
+        name=f"ticket-{interaction.user.name.lower()}",
+        overwrites=overwrites
+    )
+
+    # Message dans le ticket
+    embed = discord.Embed(title=f"{titre}", color=0x00C9A7)
+    embed.add_field(name="👤 Membre", value=interaction.user.mention, inline=True)
+    embed.add_field(name="📁 Catégorie", value=titre, inline=True)
+    embed.add_field(name="📝 Instructions", value=instructions, inline=False)
+    embed.set_footer(text="Pour fermer ce ticket, tapez /fermerticket")
+    
+    await channel.send(embed=embed, view=FermerTicketView())
+    await interaction.response.send_message(f"✅ Ton ticket a été créé : {channel.mention}", ephemeral=True)
+
+    # Log
+    logs = discord.utils.get(interaction.guild.text_channels, name="logs")
+    if logs:
+        await logs.send(f"🎫 Nouveau ticket **{titre}** ouvert par {interaction.user.mention} : {channel.mention}")
+
+class FermerTicketView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🔒 Fermer le ticket", style=discord.ButtonStyle.danger, custom_id="fermer_ticket")
+    async def fermer_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("🔒 Ticket fermé. Ce salon sera supprimé dans 5 secondes.")
+        logs = discord.utils.get(interaction.guild.text_channels, name="logs")
+        if logs:
+            await logs.send(f"🔒 Ticket {interaction.channel.mention} fermé par {interaction.user.mention}")
+        import asyncio
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
+
+@bot.tree.command(name="ticket", description="Envoyer le panel de tickets (admin)")
 @app_commands.checks.has_permissions(administrator=True)
 async def ticket(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="📋 Candidatures — Service des Douanes",
-        description="Clique sur le bouton ci-dessous pour ouvrir ta candidature.",
-        color=0x3498db
+        title="🎫 Ouvrir un ticket",
+        description="Clique sur le bouton correspondant à ta demande 👇",
+        color=0x00C9A7
     )
-    await interaction.response.send_message(embed=embed, view=TicketButton())
+    embed.add_field(name="💼 Projets & Entreprises", value="Créer ou gérer une entreprise RP", inline=True)
+    embed.add_field(name="🔧 Problème Technique", value="Signaler un bug ou problème", inline=True)
+    embed.add_field(name="⚖️ Plainte Joueur", value="Signaler un joueur", inline=True)
+    embed.add_field(name="❓ Question", value="Poser une question au staff", inline=True)
+    await interaction.response.send_message(embed=embed, view=TicketView())
+
+@bot.tree.command(name="fermerticket", description="Fermer le ticket actuel")
+async def fermerticket(interaction: discord.Interaction):
+    if "ticket-" in interaction.channel.name:
+        await interaction.response.send_message("🔒 Ticket fermé. Ce salon sera supprimé dans 5 secondes.")
+        logs = discord.utils.get(interaction.guild.text_channels, name="logs")
+        if logs:
+            await logs.send(f"🔒 Ticket {interaction.channel.mention} fermé par {interaction.user.mention}")
+        import asyncio
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
+    else:
+        await interaction.response.send_message("❌ Cette commande ne fonctionne que dans un ticket !", ephemeral=True)
 
 bot.run(TOKEN)
